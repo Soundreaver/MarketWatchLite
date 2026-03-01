@@ -9,6 +9,7 @@ import { CryptoCard, CryptoCardSkeleton } from '@/components/CryptoCard'
 import { CryptoDetails } from '@/components/CryptoDetails'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { WatchlistManager } from '@/components/WatchlistManager'
+import { ApiKeyManager } from '@/components/ApiKeyManager'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { useLocalStorage } from '@/hooks/useLocalStorage'
 import { useCryptoList } from '@/hooks/useCrypto'
@@ -18,6 +19,7 @@ type SortOption = 'market_cap' | 'price' | 'change_24h'
 
 export function Dashboard() {
   const [watchlist, setWatchlist] = useLocalStorage<string[]>('crypto-watchlist', [])
+  const [apiKey, setApiKey] = useLocalStorage<string>('gemini-api-key', '')
   const [selectedCrypto, setSelectedCrypto] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<SortOption>('market_cap')
   const [isClient, setIsClient] = useState(false)
@@ -27,7 +29,7 @@ export function Dashboard() {
   }, [])
   
   // Load initial data - either watchlist or default popular cryptos
-  const { data: cryptos, isLoading } = useCryptoList(
+  const { data: cryptos, isLoading, isError } = useCryptoList(
     isClient && watchlist.length > 0 ? watchlist : undefined
   )
 
@@ -111,6 +113,11 @@ export function Dashboard() {
             ) : (
               <Skeleton className="h-9 w-36" />
             )}
+            
+            {isClient && (
+              <ApiKeyManager apiKey={apiKey} onSave={setApiKey} />
+            )}
+
             <ThemeToggle />
           </div>
         </div>
@@ -154,6 +161,11 @@ export function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {isLoading ? (
             Array(8).fill(0).map((_, i) => <CryptoCardSkeleton key={i} />)
+          ) : isError ? (
+            <div className="col-span-full text-center py-12 text-red-500 bg-red-500/10 rounded-lg">
+              <p className="font-semibold text-lg">Failed to load cryptocurrency data.</p>
+              <p className="text-sm mt-2 opacity-80">There was an issue connecting to the Binance API. Please try refreshing the page.</p>
+            </div>
           ) : (
             sortedCryptos.map((crypto) => (
               <CryptoCard
@@ -181,6 +193,8 @@ export function Dashboard() {
           {selectedCrypto && (
             <CryptoDetails
               cryptoId={selectedCrypto}
+              initialData={cryptos?.find(c => c.id === selectedCrypto)}
+              apiKey={apiKey}
               onClose={() => setSelectedCrypto(null)}
             />
           )}

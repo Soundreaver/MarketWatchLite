@@ -62,6 +62,9 @@ export interface ChartData {
   total_volumes: [number, number][];
 }
 
+export type OHLCData = [number, number, number, number, number][];
+
+
 export interface SearchResult {
   id: string;
   name: string;

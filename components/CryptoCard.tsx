@@ -7,27 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrency, formatPercentage } from '@/lib/utils'
 import { Cryptocurrency } from '@/lib/types'
-import { Line } from 'react-chartjs-2'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Filler,
-} from 'chart.js'
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Filler
-)
+// Using a simple native SVG for the sparkline instead of heavy chart.js instances
 
 interface CryptoCardProps {
   crypto: Cryptocurrency
@@ -40,47 +20,33 @@ export function CryptoCard({ crypto, isInWatchlist, onToggleWatchlist, onClick }
   const isPositive = crypto.price_change_percentage_24h >= 0
   const sparklineData = crypto.sparkline_in_7d?.price || []
 
-  const chartData = {
-    labels: sparklineData.map((_, i) => i),
-    datasets: [
-      {
-        data: sparklineData,
-        borderColor: isPositive ? '#10b981' : '#ef4444',
-        borderWidth: 1.5,
-        fill: false,
-        tension: 0.4,
-        pointRadius: 0,
-      },
-    ],
-  }
+  const sparklineMin = Math.min(...sparklineData)
+  const sparklineMax = Math.max(...sparklineData)
+  const sparklineRange = sparklineMax - sparklineMin || 1
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        enabled: false,
-      },
-    },
-    scales: {
-      x: {
-        display: false,
-      },
-      y: {
-        display: false,
-      },
-    },
-  }
+  // Map data to SVG coordinates (width: 100%, height: 64px)
+  const svgPoints = sparklineData.map((val, i) => {
+    const x = (i / (sparklineData.length - 1)) * 100
+    const y = 64 - ((val - sparklineMin) / sparklineRange) * 64
+    return `${x},${y}`
+  }).join(' ')
 
   return (
     <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={onClick}>
       <CardContent className="p-4">
         <div className="flex justify-between items-start mb-3">
           <div className="flex items-center space-x-2">
-            <img src={crypto.image} alt={crypto.name} className="w-8 h-8" />
+            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
+              <img 
+                src={crypto.image} 
+                alt={crypto.name} 
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+              <span>{crypto.symbol.slice(0, 3)}</span>
+            </div>
             <div>
               <h3 className="font-semibold">{crypto.name}</h3>
               <p className="text-sm text-muted-foreground uppercase">{crypto.symbol}</p>
@@ -112,8 +78,17 @@ export function CryptoCard({ crypto, isInWatchlist, onToggleWatchlist, onClick }
           </div>
 
           {sparklineData.length > 0 && (
-            <div className="h-16 mt-2">
-              <Line data={chartData} options={chartOptions} />
+            <div className="h-16 mt-2 w-full pt-2">
+              <svg width="100%" height="100%" viewBox="0 0 100 64" preserveAspectRatio="none">
+                <polyline
+                  points={svgPoints}
+                  fill="none"
+                  stroke={isPositive ? '#10b981' : '#ef4444'}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </div>
           )}
 

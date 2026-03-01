@@ -6,7 +6,16 @@ import { TrendingUp, TrendingDown, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrency, formatPercentage, formatNumber } from '@/lib/utils'
-import { useCryptoDetails, useChartData } from '@/hooks/useCrypto'
+import { useCryptoDetails, useChartData, useOHLCData } from '@/hooks/useCrypto'
+import { CandlestickChart, CandlestickDataPoint } from '@/components/CandlestickChart'
+import { Sparkles, Loader2 } from 'lucide-react'
+import { Cryptocurrency } from '@/lib/types'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -38,6 +47,8 @@ ChartJS.register(
 
 interface CryptoDetailsProps {
   cryptoId: string
+  initialData?: Cryptocurrency
+  apiKey?: string
   onClose: () => void
 }
 
@@ -50,14 +61,63 @@ const timeframes = [
   { label: '1Y', days: 365 },
 ]
 
-export function CryptoDetails({ cryptoId, onClose }: CryptoDetailsProps) {
+export function CryptoDetails({ cryptoId, initialData, apiKey, onClose }: CryptoDetailsProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState(1)
-  const { data: crypto, isLoading: cryptoLoading, isError: cryptoError } = useCryptoDetails(cryptoId)
+  const { data: fetchedCrypto, isLoading: cryptoLoading, isError: cryptoError } = useCryptoDetails(cryptoId)
   const { data: chartData, isLoading: chartLoading, isError: chartError } = useChartData(cryptoId, selectedTimeframe)
+  const { data: ohlcData, isLoading: ohlcLoading } = useOHLCData(cryptoId, selectedTimeframe)
+
+  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null)
+  const [analyzedCandle, setAnalyzedCandle] = useState<CandlestickDataPoint | null>(null)
+
+  const handleCandleClick = async (candle: CandlestickDataPoint) => {
+    setAnalyzedCandle(candle)
+    setIsAnalysisModalOpen(true)
+    
+    if (!apiKey) {
+      setAnalysisResult("Please set your Google Gemini API key in the top navigation bar to enable AI market analysis.");
+      return;
+    }
+
+    setIsAnalyzing(true)
+    setAnalysisResult(null)
+
+    try {
+      const res = await fetch('/api/analyze-candle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cryptoId,
+          cryptoName: crypto?.name,
+          candle,
+          apiKey,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to analyze candle');
+      }
+
+      const data = await res.json();
+      setAnalysisResult(data.analysis);
+    } catch (error: any) {
+      console.error(error);
+      setAnalysisResult(error.message || "An error occurred while analyzing the market data.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  const crypto = (fetchedCrypto || initialData) as any
 
   // Use a key to force re-mount when the cryptoId changes
-  // This ensures the skeleton is shown while the new data is loading
-  if (cryptoLoading || !crypto) {
+  // This ensures the skeleton is shown while the new data is loading ONLY if we don't have initialData
+  if (!crypto) {
     return <CryptoDetailsSkeleton key={cryptoId} />
   }
 
@@ -236,10 +296,10 @@ export function CryptoDetails({ cryptoId, onClose }: CryptoDetailsProps) {
               </div>
             </div>
             <div className="h-64">
-              {chartLoading ? (
+              {ohlcLoading || !ohlcData ? (
                 <Skeleton className="w-full h-full" />
               ) : (
-                <Line data={chartConfig} options={chartOptions} />
+                <CandlestickChart data={ohlcData} onCandleClick={handleCandleClick} />
               )}
             </div>
           </div>
@@ -287,41 +347,51 @@ export function CryptoDetails({ cryptoId, onClose }: CryptoDetailsProps) {
             </div>
           </div>
 
-          {crypto.description?.en && (
-            <div>
-              <h3 className="text-lg font-semibold mb-4">About {crypto.name}</h3>
-              <div 
-                className="text-sm text-muted-foreground prose prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: crypto.description.en }} 
-              />
-            </div>
-          )}
-
-          {crypto.links && (
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Links</h3>
-              <div className="flex flex-wrap gap-2">
-                {crypto.links.homepage[0] && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={crypto.links.homepage[0]} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      Website
-                    </a>
-                  </Button>
-                )}
-                {crypto.links.subreddit_url && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={crypto.links.subreddit_url} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      Reddit
-                    </a>
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      <Dialog open={isAnalysisModalOpen} onOpenChange={setIsAnalysisModalOpen}>
+        <DialogContent className="sm:max-w-[600px] border-white/10 bg-background">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2 text-xl">
+              <Sparkles className="h-5 w-5 text-yellow-500" />
+              <span>AI Market Analysis</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {analyzedCandle && (
+              <div className="mb-4 p-4 rounded-lg bg-white/5 border border-white/10 flex justify-between text-sm">
+                <div>
+                  <p className="text-muted-foreground mb-1">Date</p>
+                  <p className="font-medium">{new Date((Number(analyzedCandle.time) || 0) * 1000).toLocaleDateString()} {new Date((Number(analyzedCandle.time) || 0) * 1000).toLocaleTimeString()}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1">Open</p>
+                  <p className="font-medium">{formatCurrency(analyzedCandle.open)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground mb-1">Close</p>
+                  <p className={`font-medium ${analyzedCandle.close >= analyzedCandle.open ? 'text-green-500' : 'text-red-500'}`}>
+                    {formatCurrency(analyzedCandle.close)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isAnalyzing ? (
+              <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-muted-foreground">Gathering news and analyzing price action...</p>
+              </div>
+            ) : analysisResult ? (
+              <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap">
+                {analysisResult}
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
