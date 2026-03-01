@@ -354,7 +354,6 @@ export function CryptoDetails({ cryptoId, initialData, apiKey, onClose }: Crypto
         <DialogContent className="sm:max-w-[600px] border-white/10 bg-background">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2 text-xl">
-              <Sparkles className="h-5 w-5 text-yellow-500" />
               <span>AI Market Analysis</span>
             </DialogTitle>
           </DialogHeader>
